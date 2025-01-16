@@ -38,12 +38,12 @@ func (s *passcodeSuite) TestPasscodeHandler_Init() {
 
 	cfg := func() *config.Config {
 		cfg := &test.DefaultConfig
-		cfg.Passcode.Smtp.Host = "localhost"
-		cfg.Passcode.Smtp.Port = s.EmailServer.SmtpPort
+		cfg.EmailDelivery.SMTP.Host = s.EmailServer.SmtpHost
+		cfg.EmailDelivery.SMTP.Port = s.EmailServer.SmtpPort
 		return cfg
 	}
 
-	e := NewPublicRouter(cfg(), s.Storage, nil)
+	e := NewPublicRouter(cfg(), s.Storage, nil, nil)
 
 	emailId := "51b7c175-ceb6-45ba-aae6-0092221c1b84"
 	unknownEmailId := "83618f24-2db8-4ea2-b370-ac8335f782d8"
@@ -122,10 +122,12 @@ func (s *passcodeSuite) TestPasscodeHandler_Finish() {
 
 	hashedPasscode, err := bcrypt.GenerateFromPassword([]byte("123456"), 12)
 
+	userId := uuid.FromStringOrNil("b5dd5267-b462-48be-b70d-bcd6f1bbe7a5")
+	emailId := uuid.FromStringOrNil("51b7c175-ceb6-45ba-aae6-0092221c1b84")
 	passcode := models.Passcode{
 		ID:        uuid.FromStringOrNil("a2383922-dea3-46c8-be17-85b267c0d135"),
-		UserId:    uuid.FromStringOrNil("b5dd5267-b462-48be-b70d-bcd6f1bbe7a5"),
-		EmailID:   uuid.FromStringOrNil("51b7c175-ceb6-45ba-aae6-0092221c1b84"),
+		UserId:    &userId,
+		EmailID:   &emailId,
 		Ttl:       300,
 		Code:      string(hashedPasscode),
 		TryCount:  0,
@@ -135,8 +137,8 @@ func (s *passcodeSuite) TestPasscodeHandler_Finish() {
 
 	passcodeWithExpiredTimeout := models.Passcode{
 		ID:        uuid.FromStringOrNil("a2383922-dea3-46c8-be17-85b267c0d135"),
-		UserId:    uuid.FromStringOrNil("b5dd5267-b462-48be-b70d-bcd6f1bbe7a5"),
-		EmailID:   uuid.FromStringOrNil("51b7c175-ceb6-45ba-aae6-0092221c1b84"),
+		UserId:    &userId,
+		EmailID:   &emailId,
 		Ttl:       300,
 		Code:      string(hashedPasscode),
 		TryCount:  0,
@@ -144,10 +146,11 @@ func (s *passcodeSuite) TestPasscodeHandler_Finish() {
 		UpdatedAt: now,
 	}
 
+	emailIdNotAssigned := uuid.FromStringOrNil("7c4473b8-ddcc-480b-b01f-df89e99f74c9")
 	passcodeForNonAssignedEmail := models.Passcode{
 		ID:        uuid.FromStringOrNil("494129d5-76de-4fae-b07d-f2a521e1804d"),
-		UserId:    uuid.FromStringOrNil("b5dd5267-b462-48be-b70d-bcd6f1bbe7a5"),
-		EmailID:   uuid.FromStringOrNil("7c4473b8-ddcc-480b-b01f-df89e99f74c9"),
+		UserId:    &userId,
+		EmailID:   &emailIdNotAssigned,
 		Ttl:       300,
 		Code:      string(hashedPasscode),
 		TryCount:  0,
@@ -278,7 +281,7 @@ func (s *passcodeSuite) TestPasscodeHandler_Finish() {
 			sessionManager, err := session.NewManager(jwkManager, test.DefaultConfig)
 			s.Require().NoError(err)
 
-			e := NewPublicRouter(currentTest.cfg(), s.Storage, nil)
+			e := NewPublicRouter(currentTest.cfg(), s.Storage, nil, nil)
 
 			// Setup passcode
 			err = s.Storage.GetPasscodePersister().Create(currentTest.passcode)
@@ -298,13 +301,13 @@ func (s *passcodeSuite) TestPasscodeHandler_Finish() {
 				req := httptest.NewRequest(http.MethodPost, "/passcode/login/finalize", bytes.NewReader(bodyJson))
 				req.Header.Set("Content-Type", "application/json")
 				if currentTest.sendSessionTokenInAuthHeader {
-					sessionToken, err := sessionManager.GenerateJWT(uuid.FromStringOrNil(currentTest.userId))
+					sessionToken, _, err := sessionManager.GenerateJWT(uuid.FromStringOrNil(currentTest.userId), nil)
 					s.Require().NoError(err)
 					req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", sessionToken))
 				}
 
 				if currentTest.sendSessionTokenInCookie {
-					sessionToken, err := sessionManager.GenerateJWT(uuid.FromStringOrNil(currentTest.userId))
+					sessionToken, _, err := sessionManager.GenerateJWT(uuid.FromStringOrNil(currentTest.userId), nil)
 					s.Require().NoError(err)
 
 					sessionCookie, err := sessionManager.GenerateCookie(sessionToken)
